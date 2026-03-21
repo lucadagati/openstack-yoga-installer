@@ -19,8 +19,14 @@ The script is designed to be executed on Ubuntu 20.04 LTS and can be downloaded 
 
 ```bash
 git clone https://github.com/lucadagati/openstack_yoga.git
-cd openStack-yoga
-bash Yoga_Installation.sh
+cd openstack_yoga
+sudo bash Yoga_Installation.sh
+```
+
+You can override service passwords at runtime with environment variables (for example `ADMIN_PASS`, `GLANCE_PASS`, `PLACEMENT_PASS`, `NOVA_PASS`, `NEUTRON_PASS`, `RABBIT_PASS`, `SWIFT_PASS`) before running the script:
+
+```bash
+sudo ADMIN_PASS='your-admin-password' GLANCE_PASS='your-glance-password' bash Yoga_Installation.sh
 ```
 
 It's important to note that the script has been tested on Ubuntu 20.04 LTS and it is recommended to use the same version of Ubuntu or another LTS version for the best compatibility.

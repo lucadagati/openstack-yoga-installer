@@ -1,5 +1,32 @@
 #! /bin/bash
 
+set -euo pipefail
+
+function require_root()
+{
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "This script must be run as root (use sudo)." >&2
+  exit 1
+fi
+}
+
+function check_dependencies()
+{
+for cmd in apt add-apt-repository mysql systemctl ip awk; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "Missing required command: $cmd" >&2
+    exit 1
+  fi
+done
+}
+
+function validate_configuration()
+{
+if [[ "${maria_db_root_password}" == "password" ]]; then
+  echo "WARNING: maria_db_root_password is still set to the default value." >&2
+fi
+}
+
 function host_config()
 {
 controller=$(echo "$ip"     "controller")
@@ -19,9 +46,6 @@ apt -y update && apt -y dist-upgrade
 
 #Installing OpenStack Client
 apt -y install python3-openstackclient
-
-#Installing chrony
-apt -y install chrony
 
 #Installing mariadb
 apt -y install mariadb-server python3-pymysql
@@ -47,7 +71,6 @@ apt -y install nova-compute
 
 #Installing Neutron
 apt -y install neutron-server neutron-plugin-ml2 neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent neutron-metadata-agent
-apt -y install neutron-linuxbridge-agent
 
 #Installing Horizon
 apt -y install openstack-dashboard
@@ -73,7 +96,7 @@ function configuring_db()
 
     # Set the root password and secure installation automatically
     mysql -u root <<-EOF
-    SET PASSWORD FOR 'root'@'localhost' = PASSWORD('password');
+    SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${maria_db_root_password}');
     DELETE FROM mysql.user WHERE User='';
     DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1');
     DROP DATABASE IF EXISTS test;
@@ -91,14 +114,14 @@ EOF
         user=${users[$i]}
         password=${passwords[$i]}
         # Create database if it does not exist
-        mysql -u root -ppassword -e "CREATE DATABASE IF NOT EXISTS $db;"
+        mysql -u root -p"${maria_db_root_password}" -e "CREATE DATABASE IF NOT EXISTS $db;"
         # Grant privileges to the database user
-        mysql -u root -ppassword -e "GRANT ALL PRIVILEGES ON $db.* TO '$user'@'localhost' IDENTIFIED BY '$password';"
-        mysql -u root -ppassword -e "GRANT ALL PRIVILEGES ON $db.* TO '$user'@'%' IDENTIFIED BY '$password';"
+        mysql -u root -p"${maria_db_root_password}" -e "GRANT ALL PRIVILEGES ON $db.* TO '$user'@'localhost' IDENTIFIED BY '$password';"
+        mysql -u root -p"${maria_db_root_password}" -e "GRANT ALL PRIVILEGES ON $db.* TO '$user'@'%' IDENTIFIED BY '$password';"
     done
 
     # Flush privileges to ensure all changes are applied
-    mysql -u root -ppassword -e "FLUSH PRIVILEGES;"
+    mysql -u root -p"${maria_db_root_password}" -e "FLUSH PRIVILEGES;"
 }
 
 
@@ -117,7 +140,7 @@ chronyc sources
 function rabbitmq()
 {
 #Add the openstack user
-rabbitmqctl add_user openstack RABBIT_PASS
+rabbitmqctl add_user openstack "${rabbitmq_pass}"
 
 #Permit configuration, write, and read access for the openstack user
 rabbitmqctl set_permissions openstack ".*" ".*" ".*"
@@ -146,7 +169,7 @@ keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
 keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
 
 #Bootstrap the Identity service
-keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
+keystone-manage bootstrap --bootstrap-password "${admin_pass}" \
   --bootstrap-admin-url http://controller:5000/v3/ \
   --bootstrap-internal-url http://controller:5000/v3/ \
   --bootstrap-public-url http://controller:5000/v3/ \
@@ -154,7 +177,7 @@ keystone-manage bootstrap --bootstrap-password ADMIN_PASS \
 
 #Restart the Apache service
 export OS_USERNAME=admin
-export OS_PASSWORD=ADMIN_PASS
+export OS_PASSWORD="${admin_pass}"
 export OS_PROJECT_NAME=admin
 export OS_USER_DOMAIN_NAME=Default
 export OS_PROJECT_DOMAIN_NAME=Default
@@ -182,7 +205,7 @@ unset OS_AUTH_URL OS_PASSWORD
 #As the admin user, request an authentication token
 openstack --os-auth-url http://controller:5000/v3 \
   --os-project-domain-name Default --os-user-domain-name Default \
-  --os-project-name admin --os-username admin --os-password ADMIN_PASS token issue
+  --os-project-name admin --os-username admin --os-password "${admin_pass}" token issue
 }
 
 function glance()
@@ -195,7 +218,7 @@ cp ./conf_files/glance-registry.conf /etc/glance/glance-registry.conf
 . admin-openrc
 
 #Create the glance user
-openstack user create --domain default --password GLANCE_PASS glance
+openstack user create --domain default --password "${glance_pass}" glance
 
 #Add the admin role to the glance user and service project
 openstack role add --project service --user glance admin
@@ -243,7 +266,7 @@ function placement()
 cp ./conf_files/placement.conf /etc/placement/placement.conf
 
 #Create a Placement service user
-openstack user create --domain default --password PLACEMENT_PASS placement
+openstack user create --domain default --password "${placement_pass}" placement
 
 #Add the Placement user to the service project with the admin role
 openstack role add --project service --user placement admin
@@ -282,7 +305,7 @@ sed -i -e  "s/^\(novncproxy_base_url\s*=\).*/\1 http:\/\/$ip:6080\/vnc_auto.html
 . admin-openrc
 
 #Create the nova user
-openstack user create --domain default --password NOVA_PASS nova
+openstack user create --domain default --password "${nova_pass}" nova
 
 #Add the admin role to the nova user
 openstack role add --project service --user nova admin
@@ -363,7 +386,7 @@ sed -i -e  "s/^\(nova_metadata_host\s*=\).*/\1 $ip/" /etc/neutron/metadata_agent
 . admin-openrc
 
 #Create the neutron user
-openstack user create --domain default --password NEUTRON_PASS neutron
+openstack user create --domain default --password "${neutron_pass}" neutron
 
 #Add the admin role to the neutron user
 openstack role add --project service --user neutron admin
@@ -434,7 +457,7 @@ cp ./conf_files/swift.conf /etc/swift/
 
 
 . admin-openrc
-openstack user create --domain default --password SWIFT_PASS swift
+openstack user create --domain default --password "${swift_pass}" swift
 openstack role add --project service --user swift admin
 openstack service create --name swift --description "OpenStack Object Storage" object-store
 openstack endpoint create --region RegionOne object-store public http://$ip:8080/v1/AUTH_%\(project_id\)s
@@ -539,6 +562,15 @@ maria_db_connect="mysql -h localhost -u$maria_db_user -p$maria_db_root_password 
 
 ######MariaDB Credentials ends ######
 
+####### Runtime Credentials (override via env vars) #######
+admin_pass="${ADMIN_PASS:-ADMIN_PASS}"
+glance_pass="${GLANCE_PASS:-GLANCE_PASS}"
+placement_pass="${PLACEMENT_PASS:-PLACEMENT_PASS}"
+nova_pass="${NOVA_PASS:-NOVA_PASS}"
+neutron_pass="${NEUTRON_PASS:-NEUTRON_PASS}"
+rabbitmq_pass="${RABBIT_PASS:-RABBIT_PASS}"
+swift_pass="${SWIFT_PASS:-SWIFT_PASS}"
+
 ####### Application databases with name and password Starts ########
 
 # Keystone:
@@ -594,6 +626,9 @@ sleep 10
 
 #######OpenStack YOGA Installation Starts  ##############
 
+require_root
+check_dependencies
+validate_configuration
 host_config
 install_yoga_packages
 configuring_db
