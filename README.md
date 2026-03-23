@@ -1,34 +1,132 @@
-# Bash Script for OpenStack Yoga Installation
+# OpenStack Yoga Automated Installer
 
-<p align="center">
-     <img src=https://github.com/lucadagati/openstack_stein_swift/blob/main/OpenStack-Logo-Horizontal.png>
-</p>
+Production-oriented Bash installer for an **all-in-one OpenStack Yoga controller node** on Ubuntu 20.04.
 
-This bash script automates the installation of the Yoga version of OpenStack, a popular open-source cloud computing platform. The script installs several key OpenStack services, including:
+This repository provides:
+- a modular installer script: `Yoga_Installation.sh`
+- ready-to-use service templates: `conf_files/`
+- an auto-generated admin environment file: `admin-openrc`
 
-- Keystone: the identity service for OpenStack, providing authentication and authorization for all other services.
-- Glance: the image service for OpenStack, used to store and retrieve virtual machine images.
-- Placement: a new service introduced in the Yoga release, providing a REST API for managing allocation of resources like CPU, RAM, and disk space, allowing for more granular resource allocation.
-- Nova: the compute service for OpenStack, used to manage virtual machines.
-- Neutron: the networking service for OpenStack, used to manage virtual networks.
-- Horizon: the web-based management interface for OpenStack.
+## What Is Installed
 
-The script also includes a "conf" directory that contains preconfigured config files for each service. If any changes are made to the variables in the script, it is important to reflect those changes in the config files. Additionally, the script includes "admin-openrc" and "demo-openrc" files which contain preconfigured credentials. If any changes are made to the credentials, these files should also be updated.
+- Keystone (Identity)
+- Glance (Image)
+- Placement
+- Nova (Compute)
+- Neutron (Networking)
+- Horizon (Dashboard)
+- Core dependencies: MariaDB, RabbitMQ, Memcached, Chrony
 
-The script is designed to be executed on Ubuntu 20.04 LTS and can be downloaded and run using the following commands:
+## Key Improvements
+
+- Strict shell mode: `set -euo pipefail`
+- Centralized logging to `/var/log/openstack-yoga-installer.log`
+- Idempotent resource creation where possible (users/services/endpoints)
+- Safe, centralized token replacement in config templates
+- Runtime configuration with environment variables
+- Optional destructive DB reset (`RESET_MARIADB_DATA=1`)
+- Optional Cirros image download/upload (`DOWNLOAD_CIRROS=1`)
+
+## Supported Platform
+
+- Ubuntu 20.04 LTS
+- Single-node / lab / PoC deployments
+
+> This script is not a full HA production deployment tool.
+
+## Quick Start
 
 ```bash
 git clone https://github.com/lucadagati/openstack_yoga.git
 cd openstack_yoga
-sudo bash Yoga_Installation.sh
+chmod +x Yoga_Installation.sh
+sudo ./Yoga_Installation.sh
 ```
 
-You can override service passwords at runtime with environment variables (for example `ADMIN_PASS`, `GLANCE_PASS`, `PLACEMENT_PASS`, `NOVA_PASS`, `NEUTRON_PASS`, `RABBIT_PASS`, `SWIFT_PASS`) before running the script:
+## Recommended Secure Run
+
+Set strong secrets before executing:
 
 ```bash
-sudo ADMIN_PASS='your-admin-password' GLANCE_PASS='your-glance-password' bash Yoga_Installation.sh
+sudo \
+  MARIADB_ROOT_PASSWORD='change-me-now' \
+  ADMIN_PASS='change-me-now' \
+  RABBIT_PASS='change-me-now' \
+  METADATA_SECRET='change-me-now' \
+  KEYSTONE_DBPASS='change-me-now' \
+  GLANCE_DBPASS='change-me-now' \
+  PLACEMENT_DBPASS='change-me-now' \
+  NOVA_DBPASS='change-me-now' \
+  NEUTRON_DBPASS='change-me-now' \
+  GLANCE_PASS='change-me-now' \
+  PLACEMENT_PASS='change-me-now' \
+  NOVA_PASS='change-me-now' \
+  NEUTRON_PASS='change-me-now' \
+  ./Yoga_Installation.sh
 ```
 
-It's important to note that the script has been tested on Ubuntu 20.04 LTS and it is recommended to use the same version of Ubuntu or another LTS version for the best compatibility.
+## Configuration Variables
 
-The Yoga release of OpenStack includes a number of new features and improvements over previous versions, such as enhanced support for containerized workloads, improved security, and better scalability. This script provides an easy and efficient way to install and set up the Yoga version of OpenStack on an Ubuntu 20.04 LTS system.
+### Topology
+- `CONTROLLER_HOST` (default: `controller`)
+- `CONTROLLER_IP` (default: auto-detected from default route)
+- `PROVIDER_INTERFACE` (default: auto-detected from default route)
+- `REGION` (default: `RegionOne`)
+
+### Behavior flags
+- `RESET_MARIADB_DATA` (default: `0`)
+  - `1` deletes `/var/lib/mysql/*` and recreates MariaDB data dir
+- `DOWNLOAD_CIRROS` (default: `1`)
+  - `0` skips Cirros image upload
+
+### Core secrets
+- `MARIADB_ROOT_PASSWORD`
+- `RABBIT_PASS`
+- `ADMIN_PASS`
+- `METADATA_SECRET`
+
+### Database passwords
+- `KEYSTONE_DBPASS`
+- `GLANCE_DBPASS`
+- `PLACEMENT_DBPASS`
+- `NOVA_DBPASS`
+- `NEUTRON_DBPASS`
+
+### Service user passwords
+- `GLANCE_PASS`
+- `PLACEMENT_PASS`
+- `NOVA_PASS`
+- `NEUTRON_PASS`
+- `SWIFT_PASS` (reserved for future Swift setup)
+
+## Output and Validation
+
+During the run:
+- execution log is written to `/var/log/openstack-yoga-installer.log`
+- admin credentials are written to `admin-openrc`
+
+After completion:
+
+```bash
+source admin-openrc
+openstack service list
+openstack endpoint list
+openstack compute service list
+openstack network agent list
+openstack image list
+```
+
+## Troubleshooting
+
+- If endpoint/user creation fails, re-run the script after fixing connectivity or credentials.
+- If packages fail to install, verify Ubuntu release and apt mirror reachability.
+- If services do not start, inspect:
+  - `journalctl -u <service-name> -xe`
+  - `/var/log/openstack-yoga-installer.log`
+- If you need a clean DB bootstrap, rerun with:
+  - `RESET_MARIADB_DATA=1`
+
+## Notes
+
+- The script updates config files from `conf_files/`; if you customize templates, keep placeholders aligned with script variables.
+- Swift template files are present, but Swift orchestration is not enabled in the main flow yet.
