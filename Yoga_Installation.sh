@@ -85,7 +85,7 @@ require_root() {
 }
 
 check_prerequisites() {
-  local cmds=(apt add-apt-repository systemctl ip awk sed mysql)
+  local cmds=(apt add-apt-repository systemctl ip awk sed)
   local c
   for c in "${cmds[@]}"; do
     command -v "$c" >/dev/null 2>&1 || die "Missing required command: $c"
@@ -102,7 +102,7 @@ validate_inputs() {
 }
 
 ensure_hosts_entry() {
-  if ! rg -q "^[[:space:]]*${CONTROLLER_IP}[[:space:]]+${CONTROLLER_HOST}$" /etc/hosts; then
+  if ! grep -Eq "^[[:space:]]*${CONTROLLER_IP}[[:space:]]+${CONTROLLER_HOST}$" /etc/hosts; then
     echo "${CONTROLLER_IP} ${CONTROLLER_HOST}" >> /etc/hosts
     log "INFO" "Added /etc/hosts entry: ${CONTROLLER_IP} ${CONTROLLER_HOST}"
   else
@@ -243,7 +243,7 @@ ensure_os_endpoint() {
   local service_type="$1"
   local iface="$2"
   local url="$3"
-  if ! openstack endpoint list --service "$service_type" --interface "$iface" -f value -c URL | rg -F -q -- "$url"; then
+  if ! openstack endpoint list --service "$service_type" --interface "$iface" -f value -c URL | grep -Fq -- "$url"; then
     run openstack endpoint create --region "$REGION" "$service_type" "$iface" "$url"
   fi
 }
@@ -380,6 +380,7 @@ main() {
   require_root
   mkdir -p "$(dirname "$LOG_FILE")"
   touch "$LOG_FILE"
+  chmod 0600 "$LOG_FILE"
   log "INFO" "Starting OpenStack Yoga automated installation."
   check_prerequisites
   validate_inputs
