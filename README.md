@@ -37,8 +37,8 @@ This repository provides:
 ## Quick Start
 
 ```bash
-git clone https://github.com/lucadagati/openstack_yoga.git
-cd openstack_yoga
+git clone https://github.com/lucadagati/openstack-yoga-installer.git
+cd openstack-yoga-installer
 chmod +x Yoga_Installation.sh
 sudo ./Yoga_Installation.sh
 ```
