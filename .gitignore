@@ -1,0 +1,6 @@
+# generated at install time
+admin-openrc
+*.img
+mariadb_repo_setup
+*.log
+.DS_Store
